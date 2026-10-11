@@ -1,0 +1,245 @@
+---
+title: "Syntax/Output-STA1312-K09-ARIMA Bayes"
+author: "Sandra Berliana Putri"
+date: "2025-05-08"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+# Packages
+```{r}
+library(tseries)
+library(bayesforecast)
+library(lmtest)
+library(car)
+library(knitr) 
+library(tidyverse)
+library("forecast") 
+library("TTR") 
+library("TSA")
+library("graphics")
+library("dplyr")
+library(MASS)
+library(bayesplot)
+```
+
+# Data
+```{r}
+data1 <- read.csv("D:/Sem 6/Bayes/Project UAS/data bawang merah (2).csv")
+data1 <- data1[350:494,]
+data1$Tanggal <- as.Date(data1$Tanggal, format = "%d-%b-%y")
+head(data1)
+```
+
+# Eksplorasi Data
+```{r}
+str(data1)
+summary(data1)
+```
+
+# Preprocessing Data
+```{r}
+set.seed(021)
+# Menggunakan interpolasi linier untuk mengisi nilai NA
+data1$Bawang.Merah <- na.approx(data1$Bawang.Merah)
+
+# Mengecek apakah masih ada NA
+sum(is.na(data1$Bawang.Merah))
+```
+
+# Plot Data
+```{r}
+data1.ts <-ts(data1$Bawang.Merah)
+plot(data1$Tanggal, data1$Bawang.Merah, type="l", xlab="Periode", ylab="harga bawang merah papua", main="Plot Data harga bawang merah papua", xaxt="n")
+axis(1, at=seq(min(data1$Tanggal), max(data1$Tanggal), by="month"), labels=format(seq(min(data1$Tanggal), max(data1$Tanggal), by="month"), "%b %Y"), las=1, cex.axis=0.8)
+```
+
+# Splitting Data
+## Data Latih
+```{r}
+train<-data1.ts[1:116]
+train.ts<-ts(train)
+plot(data1$Tanggal[1:116], train.ts, type="l", xlab="Periode", ylab="harga bawang merah papua", main="Plot harga bawang merah papua Train", xaxt="n")
+axis(1, at=seq(min(data1$Tanggal[1:116]), max(data1$Tanggal[1:116]), by="month"), labels=format(seq(min(data1$Tanggal[1:116]), max(data1$Tanggal[1:116]), by="month"), "%b %Y"), las=1, cex.axis=0.8)
+```
+
+## Data Uji
+```{r}
+test<-data1.ts[117:145]
+test.ts<-ts(test)
+plot(data1$Tanggal[117:145], test.ts, type="l", xlab="Periode", ylab="harga bawang merah papua", main="Plot harga bawang merah papua Test", xaxt="n")
+axis(1, at=seq(min(data1$Tanggal[117:145]), max(data1$Tanggal[117:145]), by="month"), labels=format(seq(min(data1$Tanggal[117:145]), max(data1$Tanggal[117:145]), by="month"), "%b %Y"), las=1, cex.axis=0.8)
+```
+
+# Uji Stasioneritas
+## Uji Stasioner Rataan
+```{r}
+acf(train.ts)
+```
+
+```{r}
+tseries::adf.test(train.ts)
+```
+
+## Uji Stasioner Ragam
+```{r}
+index <- seq(1:116)
+bc <- boxcox(train.ts~index, lambda = seq(-7,7,by=0.1))
+```
+
+# Penanganan Ketidakstasioneran Rataan
+```{r}
+train.diff<-diff(train.ts,differences = 1) 
+plot(data1$Tanggal[2:116], train.diff, type="l", xlab="Periode", ylab="Data Difference 1", main="Plot Difference harga bawang merah papua", xaxt="n")
+axis(1, at=seq(min(data1$Tanggal[2:116]), max(data1$Tanggal[2:116]), by="month"), labels=format(seq(min(data1$Tanggal[2:116]), max(data1$Tanggal[2:116]), by="month"), "%b %Y"), las=1, cex.axis=0.8)
+```
+
+# Pemodelan ARIMA Bayesian
+```{r}
+mod1_auto1 <- auto.sarima(train.ts,
+                           seasonal=F,
+                           stepwise = FALSE, 
+                           stationary = FALSE, 
+                           trace = TRUE
+)
+```
+
+Parameter	Penjelasan
+train.ts	Data input berupa time series (deret waktu) untuk pelatihan model SARIMA. Harus dalam format ts atau tsibble, tergantung paket yang digunakan.
+
+seasonal = FALSE	Menyatakan bahwa model tidak mengikutkan komponen musiman. Artinya model SARIMA dikurangi komponen musiman, menjadi ARIMA biasa.
+
+stepwise = FALSE	Proses pencarian model tidak menggunakan algoritma stepwise (lebih cepat, tapi kurang menyeluruh). Dengan FALSE, semua kemungkinan kombinasi parameter diperiksa (comprehensive search), tetapi waktu komputasi bisa lebih lama.
+
+stationary = FALSE	Mengizinkan pencarian model dengan asumsi data tidak stasioner (nanti fungsi akan mencari orde diferensiasi d untuk menjadikannya stasioner).
+
+trace = TRUE	Menampilkan log progres model selama pencarian, berguna untuk melihat model mana saja yang diuji dan kriteria AIC/BIC-nya.
+
+```{r}
+mod1_auto1$model
+```
+
+```{r}
+library(MCMCpack)
+```
+
+# Pendugaan Parameter Bayesian
+```{r}
+library(mcmc)
+```
+
+```{r}
+mcmc_plot(mod1_auto1)
+```
+
+```{r}
+autoplot(mod1_auto1)
+```
+
+# Uji Diagnostik
+## Uji Non Formal
+```{r}
+#Eksplorasi 
+sisaan.da <- residuals(mod1_auto1) 
+par(mfrow=c(2,2)) 
+qqnorm(sisaan.da) 
+qqline(sisaan.da, col = "blue", lwd = 2) 
+plot(c(1:length(sisaan.da)),sisaan.da) 
+acf(sisaan.da) 
+pacf(sisaan.da) 
+```
+
+## Uji Formal
+```{r}
+#1) Sisaan Menyebar Normal 
+tseries::jarque.bera.test(sisaan.da)
+```
+
+```{r}
+#2) Sisaan saling bebas/tidak ada autokorelasi 
+Box.test(sisaan.da, type = "Ljung")  #tak tolak H0 > sisaan saling bebas
+```
+
+```{r}
+#3) Sisaan homogen 
+Box.test((sisaan.da)^2, type = "Ljung")  #tak tolak H0 > sisaan homogen 
+```
+
+```{r}
+#4) Nilai tengah sisaan sama dengan nol 
+t.test(sisaan.da, mu = 0, conf.level = 0.95)  #tak tolak h0 > nilai tengah sisaan sama dengan 0 
+```
+
+# Peramalan Data Uji
+```{r}
+#---FORECAST---#
+ramalan.da <- forecast::forecast(mod1_auto1, data=train , h = 30)
+ramalan.da
+```
+
+```{r}
+data.ramalan.da <- ramalan.da$mean
+
+data.ramalan.da
+
+# Definisikan end_date sebagai tanggal terakhir dari data aktual
+end_date <- max(data1$Tanggal)
+
+# Buat rentang tanggal ramalan (pastikan panjangnya sama dengan data.ramalan.da)
+forecast_dates <- seq.Date(from = end_date + 1, by = "day", length.out = length(data.ramalan.da))
+
+# Gabungkan tanggal aktual dan ramalan
+all_dates <- c(as.Date(data1$Tanggal), forecast_dates)
+
+# Buat data frame gabungan
+df <- data.frame(
+  Tanggal = all_dates,
+  Value = c(data1.ts, rep(NA, length(data.ramalan.da))),
+  Type = c(rep("data1.ts", length(data1.ts)), rep("data.ramalan.da", length(data.ramalan.da)))
+)
+
+# Masukkan nilai ramalan ke kolom Value
+df$Value[df$Type == "data.ramalan.da"] <- data.ramalan.da
+
+# Tentukan batas x-axis sampai tanggal terakhir ramalan
+x_range <- c(min(df$Tanggal), max(df$Tanggal))
+
+# Plot data aktual
+plot(df$Tanggal[df$Type == "data1.ts"], df$Value[df$Type == "data1.ts"], 
+     type = "l", col = "black", 
+     xlab = "Periode", ylab = "Harga", 
+     xaxt = "n", 
+     xlim = x_range)  # Set xlim agar mencakup semua tanggal
+
+# Tambahkan garis ramalan
+lines(df$Tanggal[df$Type == "data.ramalan.da"], df$Value[df$Type == "data.ramalan.da"], col = "red")
+
+# Atur label sumbu X agar mencakup semua bulan hingga Juni 2025
+axis(1, 
+     at = seq(from = min(df$Tanggal), to = max(df$Tanggal), by = "month"), 
+     labels = format(seq(from = min(df$Tanggal), to = max(df$Tanggal), by = "month"), "%d %b %Y"), 
+     las = 1,    # label horizontal
+     cex.axis = 0.8)
+
+# Tambahkan legenda
+legend("bottomleft", legend = c("Data Aktual", "Ramalan"), 
+       col = c("black", "red"), lty = 1, cex = 0.8)
+```
+
+# Fitted Values (Peramalan Data Latih)
+```{r}
+fitted_values_train <- fitted(mod1_auto1)
+```
+
+# Evaluasi Model
+```{r}
+accuracy(data.ramalan.da[1:30], head(test.ts,n=length(test.ts)))
+```
+
+```{r}
+actual_train <- train.ts
+mape_train <- mean(abs((actual_train - fitted_values_train) / actual_train)) * 100
+mape_train
+```
